@@ -93,6 +93,7 @@ struct SessionListRowActions {
     let archive: (SessionSummary) -> Void
     let delete: (SessionSummary) -> Void
     let rename: (SessionSummary) -> Void
+    let autoName: (SessionSummary) -> Void
     let duplicate: (SessionSummary) -> Void
     let move: (SessionSummary, String?) -> Void
     let createProject: (SessionSummary) -> Void
@@ -1110,6 +1111,38 @@ struct SessionRowContextMenu: View {
     var body: some View {
         let fullTitle = SessionRowView.displayTitle(for: session)
 
+        if SessionRowActionPolicy.offersMutationActions(for: session) {
+            Section {
+                if SessionRowActionPolicy.offersArchive(for: session) {
+                    Button {
+                        actions.archive(session)
+                    } label: {
+                        Label("Archive", systemImage: "archivebox")
+                    }
+                    .disabled(!canShowSessionMutationActions || isMutating)
+                }
+
+                if session.hermes == nil {
+                    Button {
+                        actions.autoName(session)
+                    } label: {
+                        Label("Auto-name", systemImage: "sparkles")
+                    }
+                    .disabled(!SessionTitleGenerationAvailability.canGenerate(
+                        sessionID: session.sessionId, isHermes: false, isReadOnly: session.isSessionReadOnly,
+                        isOffline: isViewingCachedData, isBusy: isMutating || isRenamingSession
+                    ))
+                }
+
+                Button {
+                    actions.rename(session)
+                } label: {
+                    Label("Rename", systemImage: "pencil")
+                }
+                .disabled(!canShowSessionMutationActions || isRenamingSession || isMutating)
+            }
+        }
+
         Section("Full Title") {
             Text(fullTitle)
 
@@ -1135,13 +1168,6 @@ struct SessionRowContextMenu: View {
                 Label(session.pinned == true ? "Unpin" : "Pin", systemImage: "pin")
             }
             .disabled(!canShowSessionMutationActions || isMutating)
-
-            Button {
-                actions.rename(session)
-            } label: {
-                Label("Rename", systemImage: "pencil")
-            }
-            .disabled(isViewingCachedData || isRenamingSession || !hasServerSessionID(session))
 
             if SessionRowActionPolicy.canDuplicate(session) {
                 Button {
@@ -1174,15 +1200,6 @@ struct SessionRowContextMenu: View {
         exportMenu
 
         if SessionRowActionPolicy.offersMutationActions(for: session) {
-            if SessionRowActionPolicy.offersArchive(for: session) {
-                Button {
-                    actions.archive(session)
-                } label: {
-                    Label("Archive", systemImage: "archivebox")
-                }
-                .disabled(!canShowSessionMutationActions || isMutating)
-            }
-
             Button(role: .destructive) {
                 actions.delete(session)
             } label: {

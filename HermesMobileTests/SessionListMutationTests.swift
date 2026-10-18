@@ -1026,6 +1026,253 @@ final class SessionListMutationTests: XCTestCase {
     }
 
     @MainActor
+    func testAutoNameHoldsMutationLockAgainstDuplicateNamingAndRename() async throws {
+        let started = expectation(description: "title generation started")
+        let release = DispatchSemaphore(value: 0)
+        defer { release.signal() }
+        let viewModel = try makeViewModel { request in
+            switch request.url?.path {
+            case "/api/sessions":
+                return apiTestJSONResponse(self.sessionListJSON(forLoadCount: 1), for: request)
+            case "/api/session/title/regenerate":
+                started.fulfill()
+                _ = release.wait(timeout: .now() + 5)
+                return apiTestJSONResponse(#"{"title":"Generated name"}"#, for: request)
+            default:
+                XCTFail("A competing mutation must not reach the network")
+                throw URLError(.badURL)
+            }
+        }
+        await viewModel.load()
+        let session = try XCTUnwrap(viewModel.sessions.first)
+        let naming = Task { await viewModel.autoName(session) }
+        await fulfillment(of: [started], timeout: 1)
+        XCTAssertTrue(viewModel.isMutating(session))
+        XCTAssertTrue(viewModel.isRenamingSession)
+        let duplicate = await viewModel.autoName(session)
+        let rename = await viewModel.rename(session, to: "Conflicting title")
+        let archived = await viewModel.archive(session)
+        XCTAssertFalse(duplicate)
+        XCTAssertFalse(rename)
+        XCTAssertFalse(archived)
+        release.signal()
+        let renamed = await naming.value
+        XCTAssertTrue(renamed)
+        XCTAssertFalse(viewModel.isMutating(session))
+        XCTAssertFalse(viewModel.isRenamingSession)
+    }
+
+    @MainActor
+    func testAutoNameSurvivesAnOverlappingUnchangedProfileRefresh() async throws {
+        for refreshFails in [false, true] {
+            for namingFails in [false, true] {
+                let started = expectation(description: "Naming waits while the same profile is refreshed")
+                let release = DispatchSemaphore(value: 0)
+                defer { release.signal() }
+                var profileReads = 0
+                let viewModel = try makeViewModel { request in
+                    switch request.url?.path {
+                    case "/api/sessions":
+                        return apiTestJSONResponse(self.sessionListJSON(forLoadCount: 1), for: request)
+                    case "/api/profiles":
+                        profileReads += 1
+                        if profileReads == 2, refreshFails { throw URLError(.cannotConnectToHost) }
+                        return apiTestJSONResponse(#"{"active":"default","profiles":[{"name":"default"}]}"#, for: request)
+                    case "/api/session/title/regenerate":
+                        started.fulfill()
+                        release.wait()
+                        if namingFails {
+                            return (HTTPURLResponse(url: request.url!, statusCode: 401, httpVersion: nil, headerFields: nil)!, Data())
+                        }
+                        return apiTestJSONResponse(#"{"title":"Generated name"}"#, for: request)
+                    default:
+                        XCTFail("Unexpected request")
+                        throw URLError(.badURL)
+                    }
+                }
+                await viewModel.load()
+                await viewModel.loadActiveProfile()
+                let original = try XCTUnwrap(viewModel.sessions.first)
+                let naming = Task { await viewModel.autoName(original) }
+                await fulfillment(of: [started], timeout: 2)
+                await viewModel.loadActiveProfile()
+                XCTAssertEqual(viewModel.activeProfileName, "default")
+                XCTAssertEqual(viewModel.activeProfileErrorMessage != nil, refreshFails)
+                release.signal()
+                let renamed = await naming.value
+
+                XCTAssertEqual(renamed, !namingFails)
+                XCTAssertEqual(viewModel.sessions.first?.title, namingFails ? original.title : "Generated name")
+                if namingFails {
+                    guard case APIError.unauthorized? = viewModel.lastError as? APIError else {
+                        return XCTFail("An unchanged profile read must not swallow a current naming error")
+                    }
+                    XCTAssertNotNil(viewModel.actionErrorMessage)
+                } else {
+                    XCTAssertNil(viewModel.lastError)
+                    XCTAssertNil(viewModel.actionErrorMessage)
+                }
+                XCTAssertFalse(viewModel.isRenamingSession)
+                XCTAssertFalse(viewModel.isMutating(original))
+            }
+        }
+    }
+
+    @MainActor
+    func testAutoNameRejectsStaleSuccessAndErrorAfterAnActualProfileSwitch() async throws {
+        for namingFails in [false, true] {
+            for returnsToOriginal in [false, true] {
+                let context = try makeContext()
+                let server = URL(string: "https://example.test")!
+                let started = expectation(description: "Naming waits while the profile changes")
+                let release = DispatchSemaphore(value: 0)
+                defer { release.signal() }
+                let viewModel = try makeViewModel { request in
+                    switch request.url?.path {
+                    case "/api/sessions":
+                        return apiTestJSONResponse(self.sessionListJSON(forLoadCount: 1), for: request)
+                    case "/api/profiles":
+                        return apiTestJSONResponse(#"{"active":"default","profiles":[{"name":"default"},{"name":"work"}]}"#, for: request)
+                    case "/api/profile/switch":
+                        return apiTestJSONResponse(#"{"active":"work"}"#, for: request)
+                    case "/api/session/title/regenerate":
+                        started.fulfill()
+                        release.wait()
+                        if namingFails {
+                            return (HTTPURLResponse(url: request.url!, statusCode: 401, httpVersion: nil, headerFields: nil)!, Data())
+                        }
+                        return apiTestJSONResponse(#"{"title":"Stale name"}"#, for: request)
+                    default:
+                        XCTFail("Unexpected request")
+                        throw URLError(.badURL)
+                    }
+                }
+                await viewModel.load(modelContext: context)
+                await viewModel.loadActiveProfile()
+                let original = try XCTUnwrap(viewModel.sessions.first)
+                let naming = Task { await viewModel.autoName(original, modelContext: context) }
+                await fulfillment(of: [started], timeout: 2)
+                let work = try XCTUnwrap(viewModel.profileOptions.first { $0.normalizedName == "work" })
+                let switched = await viewModel.switchActiveProfile(work)
+                XCTAssertTrue(switched)
+                if returnsToOriginal {
+                    viewModel.adoptDefaultProfileSelection(DefaultProfileSelection(
+                        name: "default", displayName: "Default", defaultModel: nil
+                    ))
+                }
+                release.signal()
+                let renamed = await naming.value
+
+                XCTAssertFalse(renamed)
+                XCTAssertEqual(viewModel.sessions.first?.title, original.title)
+                XCTAssertEqual(try CacheStore.cachedSessions(serverURL: server, in: context)
+                    .first { $0.sessionId == original.sessionId }?.title, original.title)
+                XCTAssertNil(viewModel.lastError)
+                XCTAssertNil(viewModel.actionErrorMessage)
+                XCTAssertFalse(viewModel.isRenamingSession)
+                XCTAssertFalse(viewModel.isMutating(original))
+            }
+        }
+    }
+
+    @MainActor
+    func testAutoNameBlocksOfflineCachedRows() async throws {
+        let context = try makeContext()
+        let server = URL(string: "https://example.test")!
+        try CacheStore.cacheSession(SessionSummary(sessionId: "s1", title: "Cached"), serverURL: server, in: context)
+        let viewModel = try makeViewModel { request in
+            XCTAssertEqual(request.url?.path, "/api/sessions")
+            throw URLError(.notConnectedToInternet)
+        }
+        await viewModel.load(modelContext: context)
+        let session = try XCTUnwrap(viewModel.sessions.first)
+        let renamed = await viewModel.autoName(session, modelContext: context)
+        XCTAssertFalse(renamed)
+        XCTAssertEqual(viewModel.sessions.first?.title, "Cached")
+        XCTAssertNotNil(viewModel.actionErrorMessage)
+    }
+
+    @MainActor
+    func testAutoNameUpdatesOnlyRequestedRowAndItsServerCache() async throws {
+        let context = try makeContext()
+        let server = URL(string: "https://example.test")!
+        let otherServer = URL(string: "https://other.test")!
+        try CacheStore.cacheSession(SessionSummary(sessionId: "session-abc", title: "Other server"), serverURL: otherServer, in: context)
+        let viewModel = try makeViewModel { request in
+            switch request.url?.path {
+            case "/api/sessions":
+                return apiTestJSONResponse(self.sessionListJSON(forLoadCount: 1), for: request)
+            case "/api/session/title/regenerate":
+                return apiTestJSONResponse(#"{"session":{"session_id":"session-abc","title":"Generated name"},"title":"Generated name"}"#, for: request)
+            default:
+                XCTFail("Unexpected request")
+                throw URLError(.badURL)
+            }
+        }
+        await viewModel.load(modelContext: context)
+        let original = try XCTUnwrap(viewModel.sessions.first)
+        let renamed = await viewModel.autoName(original, modelContext: context)
+        XCTAssertTrue(renamed)
+        XCTAssertEqual(viewModel.sessions.first?.title, "Generated name")
+        XCTAssertEqual(viewModel.sessions.first?.workspace, original.workspace)
+        XCTAssertEqual(try CacheStore.cachedSessions(serverURL: server, in: context).first?.title, "Generated name")
+        XCTAssertEqual(try CacheStore.cachedSessions(serverURL: otherServer, in: context).first?.title, "Other server")
+        XCTAssertFalse(viewModel.isRenamingSession)
+        XCTAssertFalse(viewModel.isMutating(original))
+    }
+
+    @MainActor
+    func testAutoNameRefusalOrMissingTitleKeepsOldName() async throws {
+        for body in [#"{"ok":false}"#, #"{"error":"Generation unavailable"}"#, #"{}"#,
+                     #"{"session":{"session_id":"another","title":"Wrong name"}}"#] {
+            let viewModel = try makeViewModel { request in
+                apiTestJSONResponse(request.url?.path == "/api/sessions" ? self.sessionListJSON(forLoadCount: 1) : body, for: request)
+            }
+            await viewModel.load()
+            let original = try XCTUnwrap(viewModel.sessions.first)
+            let before = viewModel.sessions
+            let renamed = await viewModel.autoName(original)
+            XCTAssertFalse(renamed)
+            XCTAssertEqual(viewModel.sessions, before)
+            XCTAssertNotNil(viewModel.actionErrorMessage)
+            XCTAssertFalse(viewModel.isRenamingSession)
+            XCTAssertFalse(viewModel.isMutating(original))
+        }
+    }
+
+    @MainActor
+    func testAutoNameBlocksReadOnlyAndMissingIDWithoutNetwork() async throws {
+        let viewModel = try makeViewModel { _ in
+            XCTFail("Blocked sessions must not call title generation")
+            throw URLError(.badURL)
+        }
+        for session in [SessionSummary(sessionId: nil), SessionSummary(sessionId: "  "),
+                        SessionSummary(sessionId: "s1", readOnly: true)] {
+            let renamed = await viewModel.autoName(session)
+            XCTAssertFalse(renamed)
+        }
+    }
+
+    @MainActor
+    func testAutoNameFailureKeepsOldNameAndPreservesAuthError() async throws {
+        let viewModel = try makeViewModel { request in
+            if request.url?.path == "/api/sessions" {
+                return apiTestJSONResponse(self.sessionListJSON(forLoadCount: 1), for: request)
+            }
+            return (HTTPURLResponse(url: request.url!, statusCode: 401, httpVersion: nil, headerFields: nil)!, Data())
+        }
+        await viewModel.load()
+        let original = try XCTUnwrap(viewModel.sessions.first)
+        let before = viewModel.sessions
+        let renamed = await viewModel.autoName(original)
+        XCTAssertFalse(renamed)
+        XCTAssertEqual(viewModel.sessions, before)
+        guard case APIError.unauthorized? = viewModel.lastError as? APIError else { return XCTFail("Keep sign-in routing") }
+        XCTAssertNotNil(viewModel.actionErrorMessage)
+        XCTAssertFalse(viewModel.isRenamingSession)
+    }
+
+    @MainActor
     func testRenameSessionUpdatesLocalRowAndCachedSession() async throws {
         var requestedPaths: [String] = []
         let context = try makeContext()
