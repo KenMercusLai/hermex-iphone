@@ -192,8 +192,14 @@ scripts/app-store release stage --version "$VERSION" --build-id "$BUILD_ID" \
 # After the owner approves the release pack:
 scripts/app-store --write release stage --version "$VERSION" --build-id "$BUILD_ID" \
   --metadata-dir "$METADATA_DIR" --confirm
+VERSION_ID="$(scripts/app-store versions view --version "$VERSION" --output json \
+  | python3 -c 'import json, sys; print(json.load(sys.stdin)["id"])')"
 scripts/app-store --write versions update --version-id "$VERSION_ID" --release-type MANUAL
 ```
+
+Resolve and save `VERSION_ID` after staging so it includes a newly created
+version. It is the App Store version's resource ID, distinct from `VERSION`
+and `BUILD_ID`; keep it with the release record for the later publication step.
 
 Staging creates the version, applies localization text, attaches the existing
 build, and validates without submitting. It does not populate screenshots,
