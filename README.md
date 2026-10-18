@@ -1,3 +1,17 @@
+# Hermex for iPhone - Ken's fork
+
+This is [KenMercusLai/hermex-iphone](https://github.com/KenMercusLai/hermex-iphone),
+an iPhone-focused fork of [uzairansaruzi/hermex](https://github.com/uzairansaruzi/hermex).
+Feature requests and bugs for this version belong in [this fork's Issues](https://github.com/KenMercusLai/hermex-iphone/issues).
+It is maintained separately from `hermex-mac`. The upstream project and MIT license
+are preserved below; the App Store links refer to the upstream app, not this fork.
+
+Ken provides requirements; the assistant owns implementation, regression tests,
+independent review, branches, PRs and validated repository delivery. See
+[the fork maintenance guide](docs/agents/iphone-fork.md) for scope and validation boundaries.
+
+---
+
 <div align="center">
 
 <img src="docs/assets/readme/hermex-icon.png" alt="Hermex app icon" width="96" />
