@@ -1,5 +1,15 @@
 # Hermex
 
+## Ken's iPhone fork
+
+This checkout is `KenMercusLai/hermex-iphone`, maintained separately from `hermex-mac`.
+Read [the fork maintenance guide](docs/agents/iphone-fork.md) first. Ken provides
+requirements and authorizes the assistant to manage implementation, review, PRs,
+merges and validated delivery in this fork; the upstream per-push approval and
+App Store release conventions below do not grant access to upstream accounts.
+GitHub Actions stay disabled. If full Xcode/iOS verification is unavailable,
+record the blocker and keep the feature issue open rather than claim completion.
+
 Hermex is a native SwiftUI iPhone app for a self-hosted Hermes agent. It talks directly to the user's Hermes host over HTTPS (or, for legacy servers, their `hermes-webui`) and gives them a phone-native control surface: start and steer sessions, watch streaming work, browse the workspace, and recover from wherever they are. The Xcode target and scheme are `HermesMobile`; the App Store name is `Hermex`.
 
 You can think of Hermex as an open source "bring-your-own-server" iPhone client for Hermes. The phone is the control and review plane; the server owns execution, tools, models, and the user's data.
