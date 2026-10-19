@@ -81,6 +81,15 @@ extension APIClient {
         )
     }
 
+    func generateSessionTitle(id: String) async throws -> SessionTitleGenerationResponse {
+        try await send(
+            endpoint: .generateSessionTitle,
+            method: "POST",
+            body: SessionTitleGenerationRequest(sessionID: id),
+            timeout: 120
+        )
+    }
+
     func renameSession(id: String, title: String) async throws -> SessionMutationResponse {
         try await send(
             endpoint: .renameSession,

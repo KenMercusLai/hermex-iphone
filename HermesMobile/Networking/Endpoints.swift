@@ -15,6 +15,7 @@ enum Endpoint {
     case importCLISession
     case newSession
     case renameSession
+    case generateSessionTitle
     case deleteSession
     case pinSession
     case archiveSession
@@ -171,6 +172,8 @@ enum Endpoint {
             return "/api/session/new"
         case .renameSession:
             return "/api/session/rename"
+        case .generateSessionTitle:
+            return "/api/session/title/regenerate"
         case .deleteSession:
             return "/api/session/delete"
         case .pinSession:

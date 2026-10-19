@@ -107,7 +107,11 @@ final class SessionListViewModel {
     private(set) var isSearchingRemoteSessions = false
     private(set) var sessionLoadError: Error?
     private(set) var lastError: Error?
-    private(set) var activeProfileName: String?
+    private(set) var activeProfileName: String? {
+        didSet {
+            if activeProfileName != oldValue { activeProfileOwnershipGeneration &+= 1 }
+        }
+    }
     private(set) var activeProfileDisplayName: String?
     private(set) var activeProfileModel: String?
     private(set) var activeProfileProvider: String?
@@ -141,6 +145,9 @@ final class SessionListViewModel {
     /// that open finishes or a newer open or navigation invalidates it.
     private(set) var openingSessionID: String?
     private var activeProfileGeneration = 0
+    /// Unlike profile-read ordering, naming ownership changes only with the
+    /// selected profile, including a switch away and back to the same name.
+    private var activeProfileOwnershipGeneration = 0
 
     private let client: APIClient
     private let sessionMutator: SessionMutator
@@ -1152,6 +1159,50 @@ final class SessionListViewModel {
         return mutatingSessionIDs.contains(sessionId)
     }
 
+    /// Generates a name once from the latest exchange. The server persists it;
+    /// the app only installs the confirmed title on this server's existing row.
+    func autoName(_ session: SessionSummary, modelContext: ModelContext? = nil) async -> Bool {
+        guard hermes == nil, session.hermes == nil, !session.isSessionReadOnly else {
+            actionErrorMessage = String(localized: "This command is not available in the mobile app.")
+            return false
+        }
+        guard !isViewingCachedData else {
+            actionErrorMessage = String(localized: "Reconnect to the server to rename a session.")
+            return false
+        }
+        guard let sessionID = session.sessionId, Self.nonEmpty(sessionID) != nil else {
+            actionErrorMessage = String(localized: "The server did not provide a session ID.")
+            return false
+        }
+        guard !isRenamingSession, beginSessionMutation(sessionID) else { return false }
+        isRenamingSession = true
+        actionErrorMessage = nil
+        lastError = nil
+        let profileGeneration = activeProfileOwnershipGeneration
+        defer {
+            isRenamingSession = false
+            endSessionMutation(sessionID)
+        }
+        do {
+            let title = try await sessionMutator.generateTitle(sessionID: sessionID)
+            guard !Task.isCancelled, profileGeneration == activeProfileOwnershipGeneration else { return false }
+            guard let index = sessions.firstIndex(where: { $0.sessionId == sessionID }) else { return false }
+            let updated = sessions[index].replacingTitle(with: title)
+            sessions[index] = updated
+            if let modelContext {
+                do { try CacheStore.cacheSession(updated, serverURL: server, in: modelContext) }
+                catch { cacheErrorMessage = error.localizedDescription }
+            }
+            return true
+        } catch {
+            guard !Task.isCancelled, !isCancellationError(error),
+                  profileGeneration == activeProfileOwnershipGeneration else { return false }
+            lastError = error
+            actionErrorMessage = error.localizedDescription
+            return false
+        }
+    }
+
     func rename(_ session: SessionSummary, to rawTitle: String, modelContext: ModelContext? = nil) async -> Bool {
         guard !isViewingCachedData else {
             actionErrorMessage = String(localized: "Reconnect to the server to rename a session.")
@@ -1169,10 +1220,14 @@ final class SessionListViewModel {
         }
 
         if session.hermes != nil { return await renameHermesSession(session, to: title) }
+        guard !isRenamingSession, beginSessionMutation(sessionId) else { return false }
         isRenamingSession = true
         actionErrorMessage = nil
         lastError = nil
-        defer { isRenamingSession = false }
+        defer {
+            isRenamingSession = false
+            endSessionMutation(sessionId)
+        }
 
         do {
             let response = try await sessionMutator.rename(sessionID: sessionId, title: title)

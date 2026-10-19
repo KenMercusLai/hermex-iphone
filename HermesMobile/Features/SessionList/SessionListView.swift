@@ -116,6 +116,7 @@ struct SessionListView: View {
     @State private var sessionPendingProjectCreation: SessionSummary?
     @State private var sessionOpenErrorMessage: String?
     @State private var sessionOpenTask: Task<Void, Never>?
+    @State private var sessionAutoNameTask = SessionTitleGenerationTask()
     @State private var sessionExportShareItem: SessionExportShareItem?
     @State private var isPresentingProjectCreation = false
     @State private var isPresentingAddServer = false
@@ -408,8 +409,14 @@ struct SessionListView: View {
             .onDisappear {
                 ratingRequestID = nil
                 sessionOpenTask?.cancel()
+                sessionAutoNameTask.cancel()
                 viewModel.invalidateSessionOpening()
                 actionToast.dismiss()
+            }
+            .onChange(of: authManager.state) {
+                if authManager.state != .loggedIn(server: server) {
+                    sessionAutoNameTask.cancel()
+                }
             }
             .onChange(of: viewModel.isLoading) {
                 refreshAfterForegroundReturnIfReady()
@@ -1104,6 +1111,23 @@ struct SessionListView: View {
             },
             rename: { session in
                 sessionPendingRename = session
+            },
+            autoName: { session in
+                guard !viewModel.isRenamingSession,
+                      authManager.state == .loggedIn(server: server) else { return }
+                let message = String(localized: "Generating conversation name…")
+                let toast = ActionToast(message: message, systemImage: "sparkles", accessibilityLabel: message)
+                actionToast.show(toast)
+                sessionAutoNameTask.start(server: server, currentServer: {
+                    guard case .loggedIn(let activeServer) = authManager.state else { return nil }
+                    return activeServer
+                }, operation: {
+                    await viewModel.autoName(session, modelContext: modelContext)
+                }, completion: { renamed in
+                    if actionToast.toast?.id == toast.id { actionToast.dismiss() }
+                    handleLastError()
+                    if renamed { SessionHaptics.sessionRenamed(isEnabled: isHapticsEnabled) }
+                })
             },
             duplicate: { session in
                 Task { await duplicate(session) }

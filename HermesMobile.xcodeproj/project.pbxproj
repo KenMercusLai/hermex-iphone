@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A10F00000000000000000001 /* SessionTitleGeneration.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10F00000000000000000002 /* SessionTitleGeneration.swift */; };
 		A4790000000000000000E001 /* PushEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4790000000000000000F001 /* PushEnvironment.swift */; };
 		A4790000000000000000E002 /* PushPairing.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4790000000000000000F002 /* PushPairing.swift */; };
 		A4790000000000000000E003 /* PushRelayClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4790000000000000000F003 /* PushRelayClient.swift */; };
@@ -687,6 +688,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		A10F00000000000000000002 /* SessionTitleGeneration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionTitleGeneration.swift; sourceTree = "<group>"; };
 		B48200000000000000000001 /* BotProfileAppearance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Bots/BotProfileAppearance.swift; sourceTree = "<group>"; };
 		B48200000000000000000011 /* BotExpressionPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Bots/BotExpressionPickerView.swift; sourceTree = "<group>"; };
 		B48200000000000000000031 /* BotCreator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Bots/BotCreator.swift; sourceTree = "<group>"; };
@@ -1728,6 +1730,7 @@
 			children = (
 				1A2B3C4D5E6F7000000000B4 /* ServerInfo.swift */,
 				1A2B3C4D5E6F7000000000BB /* Session.swift */,
+				A10F00000000000000000002 /* SessionTitleGeneration.swift */,
 				1A2B3C4D5E6F7000000000BA /* ChatMessage.swift */,
 				1A2B3C4D5E6F7000000000BD /* Workspace.swift */,
 				C03120000000000000F001 /* GitWorkspace.swift */,
@@ -2649,6 +2652,7 @@
 				1A2B3C4D5E6F7000000000A6 /* OnboardingViewModel.swift in Sources */,
 				1A2B3C4D5E6F7000000000A4 /* ServerInfo.swift in Sources */,
 				1A2B3C4D5E6F7000000000AB /* Session.swift in Sources */,
+				A10F00000000000000000001 /* SessionTitleGeneration.swift in Sources */,
 				1A2B3C4D5E6F7000000000AA /* ChatMessage.swift in Sources */,
 				1A2B3C4D5E6F7000000000AD /* Workspace.swift in Sources */,
 				1A2B3C4D5E6F7000000000AE /* ServerCatalog.swift in Sources */,

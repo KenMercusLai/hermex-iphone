@@ -7,6 +7,19 @@ import UniformTypeIdentifiers
 @testable import HermesMobile
 
 final class APIClientSessionMutationTests: APIClientTestCase {
+    func testAutoNameUsesLatestExchangeAndReturnsPersistedTitle() async throws {
+        let client = makeClient { request in
+            XCTAssertEqual(request.url?.path, "/api/session/title/regenerate")
+            XCTAssertEqual(request.httpMethod, "POST")
+            let body = try XCTUnwrap(apiTestJSONBody(from: request))
+            XCTAssertEqual(body["session_id"] as? String, "s1+a%2Fb")
+            XCTAssertEqual(body["prefer_latest"] as? Bool, true)
+            return apiTestJSONResponse(#"{"session":{"session_id":"s1+a%2Fb","title":"Updated name"},"title":"Updated name","status":"llm"}"#, for: request)
+        }
+        let response = try await client.generateSessionTitle(id: "s1+a%2Fb")
+        XCTAssertEqual(try response.validatedTitle(for: "s1+a%2Fb"), "Updated name")
+    }
+
     func testPostRequestsEncodeSnakeCaseBody() async throws {
         let client = makeClient { request in
             XCTAssertEqual(request.url?.path, "/api/session/pin")

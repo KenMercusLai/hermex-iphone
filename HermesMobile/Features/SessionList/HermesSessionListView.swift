@@ -519,6 +519,8 @@ struct HermesSessionListView: View {
                 viewModel.clearRenameError()
                 covers.renaming = session
             },
+            // Direct Hermes has no automatic title-generation method; the shared menu hides it.
+            autoName: { _ in },
             duplicate: { session in Task { await duplicate(session) } },
             move: { session, projectID in
                 guard let project = viewModel.projects.first(where: { $0.projectId == projectID }),
